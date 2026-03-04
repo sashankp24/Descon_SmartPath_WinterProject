@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Simple Nav Demo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<style>
+    html,body,#map{height:100%;margin:0}
+
+    /* Small clean info box on top-left */
+    .info-bar {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        z-index: 1000;
+        min-width: 180px;
+    }
+
+    /* Clear button at bottom-right */
+    .clear-btn{
+        position:absolute;
+        bottom:20px;
+        right:20px;
+        z-index:1000;
+        background:#e63946;
+        color:white;
+        border:none;
+        padding:10px 14px;
+        border-radius:6px;
+        cursor:pointer;
+        font-size:14px;
+        box-shadow:0 2px 6px rgba(0,0,0,.3);
+    }
+</style>
+</head>
+<body>
+
+<div class="info-bar" id="info">Click two points</div>
+<button class="clear-btn" id="clearBtn">Clear</button>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+const API = "http://127.0.0.1:8000";
+
+// map with NO zoom buttons
+const map = L.map('map', { zoomControl: false }).setView([34.06, -118.30], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+
+let pts = [], markers = [], line = null;
+
+function setInfo(text){
+    document.getElementById("info").innerText = text;
+}
+
+map.on('click', async e => {
+    if(pts.length >= 2) return;
+
+    pts.push([e.latlng.lat, e.latlng.lng]);
+    markers.push(L.marker(e.latlng).addTo(map));
+
+    if(pts.length === 1){
+        setInfo("Select destination...");
+    }
+
+    if(pts.length === 2){
+        setInfo("Calculating...");
+        try{
+            const res = await fetch(API + "/route", {
+                method:"POST",
+                headers:{"Content-Type":"application/json"},
+                body: JSON.stringify({src:pts[0], dst:pts[1]})
+            });
+
+            if(!res.ok) throw new Error(await res.text());
+            const j = await res.json();
+
+            if(line) map.removeLayer(line);
+            line = L.polyline(j.path, {color:'blue', weight:5}).addTo(map);
+            map.fitBounds(line.getBounds(), {padding:[30,30]});
+
+            setInfo(
+                `Distance: ${Math.round(j.distance_m)} m\n` +
+                `ETA: ${Math.round(j.travel_time_seconds/60)} min\n` +
+                `Speed: ${Math.round(j.predicted_speed_mps*3.6)} km/h`
+            );
+        }
+        catch(err){
+            setInfo("Error: " + err.message);
+        }
+    }
+});
+
+document.getElementById("clearBtn").addEventListener("click", () => {
+    pts = [];
+    markers.forEach(m => m.remove());
+    markers = [];
+    if(line){ line.remove(); line = null; }
+    setInfo("Click two points");
+});
+</script>
+
+</body>
+</html>
